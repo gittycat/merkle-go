@@ -54,7 +54,8 @@ var generateCmd = &cobra.Command{
 		logger.Info("Files discovered", slog.Int("count", len(walkResult.Files)))
 
 		// Hash files concurrently
-		hashResult, err := walker.HashFiles(walkResult.Files, workers)
+		logger.Info("Starting file hashing", slog.Int("workers", workers))
+		hashResult, err := walker.HashFiles(walkResult.Files, workers, logger)
 		if err != nil {
 			return fmt.Errorf("failed to hash files: %w", err)
 		}
@@ -124,16 +125,22 @@ var compareCmd = &cobra.Command{
 		}
 
 		// Walk directory
+		logger.Info("Starting directory walk", slog.String("directory", directory))
 		walkResult, err := walker.Walk(directory, cfg.Exclude)
 		if err != nil {
 			return fmt.Errorf("failed to walk directory: %w", err)
 		}
 
+		logger.Info("Files discovered", slog.Int("count", len(walkResult.Files)))
+
 		// Hash files
-		hashResult, err := walker.HashFiles(walkResult.Files, workers)
+		logger.Info("Starting file hashing", slog.Int("workers", workers))
+		hashResult, err := walker.HashFiles(walkResult.Files, workers, logger)
 		if err != nil {
 			return fmt.Errorf("failed to hash files: %w", err)
 		}
+
+		logger.Info("Files hashed", slog.Int("count", len(hashResult.Hashes)))
 
 		// Build file data map
 		fileDataMap := make(map[string]tree.FileData)

@@ -206,7 +206,7 @@ func TestHashFiles_AllFilesProcessed(t *testing.T) {
 	}
 
 	// Hash files with 4 workers
-	result, err := HashFiles(files, 4)
+	result, err := HashFiles(files, 4, nil)
 	if err != nil {
 		t.Fatalf("HashFiles failed: %v", err)
 	}
@@ -238,7 +238,7 @@ func TestHashFiles_ErrorHandling(t *testing.T) {
 		{Path: "/nonexistent/file.txt", Size: 0},
 	}
 
-	result, err := HashFiles(files, 2)
+	result, err := HashFiles(files, 2, nil)
 	if err != nil {
 		t.Fatalf("HashFiles should not fail completely: %v", err)
 	}
@@ -278,7 +278,7 @@ func TestHashFiles_Concurrency(t *testing.T) {
 
 	// Hash with different worker counts
 	for _, workers := range []int{1, 2, 4, 8} {
-		result, err := HashFiles(files, workers)
+		result, err := HashFiles(files, workers, nil)
 		if err != nil {
 			t.Fatalf("HashFiles with %d workers failed: %v", workers, err)
 		}
