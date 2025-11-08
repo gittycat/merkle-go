@@ -3,14 +3,13 @@ package walker
 import (
 	"fmt"
 	"io/fs"
-	"log/slog"
 	"path/filepath"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"merkle-go/internal/hash"
+	"merkle-go/internal/progress"
 )
 
 type FileInfo struct {
@@ -130,7 +129,7 @@ type hashJobResult struct {
 	err  error
 }
 
-func HashFiles(files []FileInfo, numWorkers int, logger *slog.Logger) (*HashResult, error) {
+func HashFiles(files []FileInfo, numWorkers int, progressBar *progress.Bar) (*HashResult, error) {
 	if numWorkers <= 0 {
 		numWorkers = 1
 	}
@@ -148,28 +147,13 @@ func HashFiles(files []FileInfo, numWorkers int, logger *slog.Logger) (*HashResu
 	jobs := make(chan hashJob, len(files))
 	results := make(chan hashJobResult, len(files))
 
-	// Progress tracking
-	var processed atomic.Int64
-	totalFiles := int64(len(files))
-
 	// Start workers
 	var wg sync.WaitGroup
 	for i := 0; i < numWorkers; i++ {
 		wg.Add(1)
-		go func(workerID int) {
+		go func() {
 			defer wg.Done()
 			for job := range jobs {
-				// Log which file is being hashed
-				dir := filepath.Dir(job.fileInfo.Path)
-				if logger != nil {
-					logger.Debug("Hashing file",
-						slog.String("file", job.fileInfo.Path),
-						slog.String("directory", dir),
-						slog.Int("worker", workerID),
-						slog.Int64("size", job.fileInfo.Size),
-					)
-				}
-
 				hashStr, err := hash.HashFile(job.fileInfo.Path)
 				results <- hashJobResult{
 					path: job.fileInfo.Path,
@@ -177,7 +161,7 @@ func HashFiles(files []FileInfo, numWorkers int, logger *slog.Logger) (*HashResu
 					err:  err,
 				}
 			}
-		}(i)
+		}()
 	}
 
 	// Send jobs
@@ -194,43 +178,18 @@ func HashFiles(files []FileInfo, numWorkers int, logger *slog.Logger) (*HashResu
 		close(results)
 	}()
 
-	// Track current directory for logging
-	currentDirs := make(map[string]bool)
-	var dirMutex sync.Mutex
-
 	// Collect results
 	for jobResult := range results {
-		processed.Add(1)
-		count := processed.Load()
-
 		if jobResult.err != nil {
 			result.Errors = append(result.Errors, fmt.Errorf("%s: %w", jobResult.path, jobResult.err))
 		} else {
 			result.Hashes[jobResult.path] = jobResult.hash
 
-			// Log directory progress
-			if logger != nil {
+			// Update progress bar
+			if progressBar != nil {
 				dir := filepath.Dir(jobResult.path)
-				dirMutex.Lock()
-				if !currentDirs[dir] {
-					currentDirs[dir] = true
-					logger.Info("Processing directory",
-						slog.String("directory", dir),
-						slog.Int64("progress", count),
-						slog.Int64("total", totalFiles),
-					)
-				}
-				dirMutex.Unlock()
-
-				// Log progress every 10 files or at milestones
-				if count%10 == 0 || count == totalFiles {
-					percentage := float64(count) / float64(totalFiles) * 100
-					logger.Info("Hashing progress",
-						slog.Int64("processed", count),
-						slog.Int64("total", totalFiles),
-						slog.Float64("percent", percentage),
-					)
-				}
+				progressBar.SetDirectory(dir)
+				progressBar.Increment()
 			}
 		}
 	}

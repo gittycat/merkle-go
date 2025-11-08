@@ -2,12 +2,12 @@ package main
 
 import (
 	"fmt"
-	"log/slog"
 	"os"
 	"runtime"
 
 	"merkle-go/internal/compare"
 	"merkle-go/internal/config"
+	"merkle-go/internal/progress"
 	"merkle-go/internal/tree"
 	"merkle-go/internal/walker"
 
@@ -18,8 +18,6 @@ var (
 	configPath string
 	outputPath string
 	workers    int
-	verbose    bool
-	jsonLog    bool
 )
 
 var rootCmd = &cobra.Command{
@@ -35,15 +33,13 @@ var generateCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		directory := args[0]
 
-		logger := setupLogger()
-
 		// Load config
 		cfg, err := config.LoadConfig(configPath)
 		if err != nil {
 			return fmt.Errorf("failed to load config: %w", err)
 		}
 
-		logger.Info("Starting directory walk", slog.String("directory", directory))
+		fmt.Printf("Scanning directory: %s\n", directory)
 
 		// Walk directory
 		walkResult, err := walker.Walk(directory, cfg.Exclude)
@@ -51,16 +47,19 @@ var generateCmd = &cobra.Command{
 			return fmt.Errorf("failed to walk directory: %w", err)
 		}
 
-		logger.Info("Files discovered", slog.Int("count", len(walkResult.Files)))
+		fmt.Printf("Found %d files\n", len(walkResult.Files))
+		fmt.Println("Hashing files...")
+
+		// Create progress bar
+		bar := progress.New(int64(len(walkResult.Files)))
 
 		// Hash files concurrently
-		logger.Info("Starting file hashing", slog.Int("workers", workers))
-		hashResult, err := walker.HashFiles(walkResult.Files, workers, logger)
+		hashResult, err := walker.HashFiles(walkResult.Files, workers, bar)
 		if err != nil {
 			return fmt.Errorf("failed to hash files: %w", err)
 		}
 
-		logger.Info("Files hashed", slog.Int("count", len(hashResult.Hashes)))
+		bar.Finish()
 
 		// Build file data map
 		fileDataMap := make(map[string]tree.FileData)
@@ -79,8 +78,6 @@ var generateCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to build merkle tree: %w", err)
 		}
-
-		logger.Info("Merkle tree built", slog.String("root_hash", merkleTree.RootHash))
 
 		// Save to file
 		if err := tree.Save(merkleTree, outputPath); err != nil {
@@ -108,15 +105,13 @@ var compareCmd = &cobra.Command{
 		treePath := args[0]
 		directory := args[1]
 
-		logger := setupLogger()
-
 		// Load saved tree
 		oldTree, err := tree.Load(treePath)
 		if err != nil {
 			return fmt.Errorf("failed to load tree: %w", err)
 		}
 
-		logger.Info("Loaded saved tree", slog.String("root_hash", oldTree.RootHash))
+		fmt.Printf("Loaded saved tree (root: %s)\n", oldTree.RootHash[:16]+"...")
 
 		// Load config
 		cfg, err := config.LoadConfig(configPath)
@@ -124,23 +119,27 @@ var compareCmd = &cobra.Command{
 			return fmt.Errorf("failed to load config: %w", err)
 		}
 
+		fmt.Printf("Scanning directory: %s\n", directory)
+
 		// Walk directory
-		logger.Info("Starting directory walk", slog.String("directory", directory))
 		walkResult, err := walker.Walk(directory, cfg.Exclude)
 		if err != nil {
 			return fmt.Errorf("failed to walk directory: %w", err)
 		}
 
-		logger.Info("Files discovered", slog.Int("count", len(walkResult.Files)))
+		fmt.Printf("Found %d files\n", len(walkResult.Files))
+		fmt.Println("Hashing files...")
+
+		// Create progress bar
+		bar := progress.New(int64(len(walkResult.Files)))
 
 		// Hash files
-		logger.Info("Starting file hashing", slog.Int("workers", workers))
-		hashResult, err := walker.HashFiles(walkResult.Files, workers, logger)
+		hashResult, err := walker.HashFiles(walkResult.Files, workers, bar)
 		if err != nil {
 			return fmt.Errorf("failed to hash files: %w", err)
 		}
 
-		logger.Info("Files hashed", slog.Int("count", len(hashResult.Hashes)))
+		bar.Finish()
 
 		// Build file data map
 		fileDataMap := make(map[string]tree.FileData)
@@ -183,24 +182,6 @@ var compareCmd = &cobra.Command{
 	},
 }
 
-func setupLogger() *slog.Logger {
-	level := slog.LevelInfo
-	if verbose {
-		level = slog.LevelDebug
-	}
-
-	opts := &slog.HandlerOptions{Level: level}
-
-	var handler slog.Handler
-	if jsonLog {
-		handler = slog.NewJSONHandler(os.Stdout, opts)
-	} else {
-		handler = slog.NewTextHandler(os.Stdout, opts)
-	}
-
-	return slog.New(handler)
-}
-
 func init() {
 	defaultWorkers := runtime.NumCPU() * 2
 
@@ -208,15 +189,11 @@ func init() {
 	generateCmd.Flags().StringVarP(&outputPath, "output", "o", "", "Output file path (required)")
 	generateCmd.Flags().StringVarP(&configPath, "config", "c", "config.yml", "Config file path")
 	generateCmd.Flags().IntVarP(&workers, "workers", "w", defaultWorkers, "Number of worker goroutines")
-	generateCmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "Enable debug logging")
-	generateCmd.Flags().BoolVar(&jsonLog, "json-log", false, "Use JSON log format")
 	generateCmd.MarkFlagRequired("output")
 
 	// Compare command flags
 	compareCmd.Flags().StringVarP(&configPath, "config", "c", "config.yml", "Config file path")
 	compareCmd.Flags().IntVarP(&workers, "workers", "w", defaultWorkers, "Number of worker goroutines")
-	compareCmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "Enable debug logging")
-	compareCmd.Flags().BoolVar(&jsonLog, "json-log", false, "Use JSON log format")
 
 	rootCmd.AddCommand(generateCmd)
 	rootCmd.AddCommand(compareCmd)
