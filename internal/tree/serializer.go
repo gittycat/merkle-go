@@ -4,36 +4,44 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"time"
 )
 
 type SerializedTree struct {
-	Version     string              `json:"version"`
-	GeneratedAt time.Time           `json:"generated_at"`
-	RootHash    string              `json:"root_hash"`
-	Files       map[string]FileData `json:"files"`
-	Stats       Stats               `json:"stats"`
+	Generator string    `json:"generator"`
+	Created   time.Time `json:"created"`
+	Root      string    `json:"root"`
+	Size      string    `json:"size"`
+	Tree      *Node     `json:"tree"`
 }
 
-type Stats struct {
-	TotalFiles int   `json:"total_files"`
-	TotalSize  int64 `json:"total_size"`
+func formatSize(bytes int64) string {
+	const (
+		KB = 1024
+		MB = KB * 1024
+		GB = MB * 1024
+	)
+
+	switch {
+	case bytes >= GB:
+		return fmt.Sprintf("%.2f GB", float64(bytes)/float64(GB))
+	case bytes >= MB:
+		return fmt.Sprintf("%.2f MB", float64(bytes)/float64(MB))
+	case bytes >= KB:
+		return fmt.Sprintf("%.2f KB", float64(bytes)/float64(KB))
+	default:
+		return fmt.Sprintf("%d B", bytes)
+	}
 }
 
 func Save(tree *MerkleTree, path string) error {
-	stats := Stats{
-		TotalFiles: len(tree.Files),
-	}
-	for _, fileData := range tree.Files {
-		stats.TotalSize += fileData.Size
-	}
-
 	serialized := SerializedTree{
-		Version:     "1.0",
-		GeneratedAt: time.Now(),
-		RootHash:    tree.RootHash,
-		Files:       tree.Files,
-		Stats:       stats,
+		Generator: "merkle-go",
+		Created:   time.Now(),
+		Root:      tree.RootPath,
+		Size:      formatSize(tree.TotalSize),
+		Tree:      tree.Root,
 	}
 
 	data, err := json.MarshalIndent(serialized, "", "  ")
@@ -59,8 +67,37 @@ func Load(path string) (*MerkleTree, error) {
 		return nil, fmt.Errorf("failed to unmarshal tree: %w", err)
 	}
 
+	// Calculate total size from the tree and rebuild Files map with absolute paths
+	var totalSize int64
+	var collectLeaves func(*Node)
+	files := make(map[string]FileData)
+
+	collectLeaves = func(node *Node) {
+		if node == nil {
+			return
+		}
+		if node.Path != "" {
+			// This is a leaf node
+			totalSize += node.Size
+			// Convert relative path to absolute path
+			absolutePath := filepath.Join(serialized.Root, node.Path)
+			if node.MTime != 0 {
+				files[absolutePath] = FileData{
+					Hash:    node.Hash,
+					Size:    node.Size,
+					ModTime: time.Unix(node.MTime, 0),
+				}
+			}
+		}
+		collectLeaves(node.Left)
+		collectLeaves(node.Right)
+	}
+	collectLeaves(serialized.Tree)
+
 	return &MerkleTree{
-		RootHash: serialized.RootHash,
-		Files:    serialized.Files,
+		Root:      serialized.Tree,
+		RootPath:  serialized.Root,
+		TotalSize: totalSize,
+		Files:     files,
 	}, nil
 }

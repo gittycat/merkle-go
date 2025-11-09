@@ -23,55 +23,80 @@ merkle-go/
 │   ├── compare/
 │   │   ├── comparer.go        # Tree comparison logic
 │   │   └── comparer_test.go
-│   └── config/
-│       ├── config.go          # config.yml parsing
-│       └── config_test.go
+│   ├── config/
+│   │   ├── config.go          # config.yml parsing
+│   │   └── config_test.go
+│   └── progress/
+│       └── progress.go         # Real-time progress bar
 ├── go.mod
 ├── go.sum
 ├── config.yml                  # Exclusion patterns & settings
 └── README.md
 ```
 
+## Merkle Tree Implementation
+
+**Custom implementation** (removed `go-merkletree` dependency) implementing classic algorithm:
+
+1. Sort file paths alphabetically
+2. Create leaf nodes: `hash(path:fileHash)` for each file
+3. Build parent level: pair adjacent nodes, hash concatenation `hash(left||right)`
+4. Repeat pairing/hashing until single root hash
+5. Handle odd nodes by duplicating last node
+
+**Code:** `internal/tree/builder.go:17-87`
+
+**Verification:**
+```bash
+# Build and test
+go build -o bin/merkle-go ./cmd/merkle-go
+mkdir -p test && echo "content" > test/file1.txt
+./bin/merkle-go generate test -o tree.json
+# Modify and verify change detection
+echo "changed" > test/file1.txt
+./bin/merkle-go compare tree.json test  # Exit code 1 = changes detected
+```
+
 ## Dependencies
-- **`github.com/spf13/cobra`** - Industry-standard CLI framework (used by kubectl, hugo, gh)
+- **`github.com/spf13/cobra`** - CLI framework
 - **`github.com/cespare/xxhash/v2`** - Fast xxHash implementation (non-cryptographic)
-- **`github.com/txaty/go-merkletree`** - High-performance merkle tree with parallel processing support
+- **`github.com/pelletier/go-toml/v2`** - TOML parsing for config files
 - **Standard library**:
-  - `slog` - Structured logging (Go 1.21+)
   - `encoding/json` - JSON serialization
-  - `sync/errgroup` - Error propagation in goroutines
   - `filepath` - File tree walking
+  - `sync` - Concurrent processing
 
 ## CLI Commands
 
-### Command 1: `merkle-go generate <directory> -o <output.json>`
-**Purpose**: Generate merkle tree from directory and save to JSON file
+### Command 1: `merkle-go <directory> [output.json]`
+**Purpose**: Generate merkle tree from directory and save to JSON file (default command, no subcommand needed)
+
+**Default Output**: `./output/<root-hash>.json` (if not specified)
 
 **Process**:
 1. Parse config.yml for exclusion patterns and settings
 2. Walk directory tree using `filepath.WalkDir` (respecting exclusions)
 3. Hash files concurrently using worker pool with xxHash
-4. Build merkle tree with custom xxHash function
-5. Save full tree structure + metadata to JSON
-6. Report skipped files (permission errors, I/O errors) at end if any
+4. Build merkle tree using classic pairing algorithm with xxHash
+5. Display real-time progress bar during hashing
+6. Save full tree structure + metadata to JSON
+7. Report skipped files (permission errors, I/O errors) at end if any
 
 **Output**: JSON file containing merkle tree with file paths, hashes, sizes, modtimes
 
 **Flags**:
-- `-o, --output` - Output file path (required)
-- `-c, --config` - Config file path (default: config.yml)
+- `-c, --config` - Config file path (default: config.toml)
 - `-w, --workers` - Number of worker goroutines (default: 2×CPU cores)
-- `-v, --verbose` - Enable debug logging
-- `--json-log` - Use JSON log format instead of text
 
-### Command 2: `merkle-go compare <output.json> <directory>`
+### Command 2: `merkle-go compare <tree.json> <directory>`
 **Purpose**: Compare saved merkle tree against current directory state
 
 **Process**:
 1. Load saved merkle tree from JSON file
 2. Regenerate merkle tree from current directory (using same exclusions)
-3. Compare trees and identify changes
-4. Output detailed change report
+3. Display real-time progress bar during hashing
+4. Compare trees and identify changes
+5. Output detailed change report
 
 **Output Format** (detailed change report):
 ```
@@ -99,38 +124,40 @@ Skipped: 0 files
 - `2` - Errors occurred (with skip-and-warn summary)
 
 **Flags**:
-- `-c, --config` - Config file path (default: config.yml)
+- `-c, --config` - Config file path (default: config.toml)
 - `-w, --workers` - Number of worker goroutines (default: 2×CPU cores)
-- `-v, --verbose` - Enable debug logging
-- `--json-log` - Use JSON log format instead of text
 
-## Configuration File (config.yml)
+## Configuration File (config.toml)
 
-```yaml
-# Exclusion patterns (gitignore-style syntax)
-exclude:
-  - "*.tmp"
-  - "*.log"
-  - ".git/"
-  - "node_modules/"
-  - "__pycache__/"
-  - "*.pyc"
-  - ".DS_Store"
+```toml
+# List of files or directories to skip when creating the merkle tree
+skip = [
+  "*.tmp",
+  "*.log",
+  ".git/",
+  "node_modules/",
+  "__pycache__/",
+  "*.pyc",
+  ".DS_Store",
+]
+
+# Output file path (optional - defaults to ./output/<root-hash>.json)
+output_file = ""
 
 # Future settings can be added here
-# worker_count: 8
-# hash_algorithm: xxhash  # for future extensibility
+# worker_count = 8
+# hash_algorithm = "xxhash"  # for future extensibility
 ```
 
 ## Implementation Phases (TDD Approach)
 
 ### Phase 1: Configuration & Setup
 **Test-Driven Development**:
-1. **Test**: Create test config.yml, verify parsing loads exclude patterns correctly
-2. **Implement**: Config struct with YAML unmarshaling using `gopkg.in/yaml.v3`
+1. **Test**: Create test config.toml, verify parsing loads skip patterns correctly
+2. **Implement**: Config struct with TOML unmarshaling using `github.com/pelletier/go-toml/v2`
 3. **Test**: Verify default config when file doesn't exist
 4. **Implement**: Default config fallback logic
-5. **Test**: Invalid YAML returns proper error
+5. **Test**: Invalid TOML returns proper error
 6. **Implement**: Error handling with descriptive messages
 
 **Deliverable**: `internal/config/config.go` with full test coverage
@@ -146,7 +173,7 @@ exclude:
 5. **Test**: Hash non-existent file returns error
 6. **Implement**: File opening with error handling
 7. **Test**: Thread-safe wrapper for merkle tree integration
-8. **Implement**: xxHash adapter function for `go-merkletree` custom hash
+8. **Implement**: xxHash adapter function for custom merkle tree implementation
 
 **Key Implementation Details**:
 ```go
@@ -218,26 +245,39 @@ filepath.WalkDir → File Paths → Job Channel → Worker Pool → Result Chann
 ### Phase 5: Merkle Tree Construction
 **Test-Driven Development**:
 1. **Test**: Build merkle tree from small list of hashes, verify root hash
-2. **Implement**: Integration with `txaty/go-merkletree` library
+2. **Implement**: Custom merkle tree algorithm (sort, hash leaves, pair and hash)
 3. **Test**: Custom xxHash function produces consistent tree
 4. **Implement**: xxHash adapter configured in tree builder
-5. **Test**: Parallel tree building enabled, verify thread-safety
-6. **Implement**: Enable parallel mode with `RunInParallel: true`
+5. **Test**: Odd number of nodes handled correctly (duplicate last)
+6. **Implement**: Handle odd nodes by duplicating
 7. **Test**: Tree preserves file metadata (path, size, modtime)
 8. **Implement**: Custom tree node structure with metadata
 
 **Key Implementation Details**:
 ```go
-config := &merkletree.Config{
-    HashFunc:         xxHashFunc,
-    RunInParallel:    true,
-    NumRoutines:      0, // 0 = use runtime.NumCPU()
-    SortSiblingPairs: true,
-    Mode:             merkletree.ModeTreeBuild,
+// Build leaf level
+for _, path := range sortedPaths {
+    leafData := []byte(path + ":" + fileData.Hash)
+    leafHash, _ := hash.XXHashFunc(leafData)
+    currentLevel = append(currentLevel, leafHash)
+}
+
+// Build tree by pairing adjacent nodes
+for len(currentLevel) > 1 {
+    for i := 0; i < len(currentLevel); i += 2 {
+        if i+1 < len(currentLevel) {
+            combined := append(currentLevel[i], currentLevel[i+1]...)
+        } else {
+            combined := append(currentLevel[i], currentLevel[i]...) // duplicate odd
+        }
+        parentHash, _ := hash.XXHashFunc(combined)
+        nextLevel = append(nextLevel, parentHash)
+    }
+    currentLevel = nextLevel
 }
 ```
 
-**Deliverable**: `internal/tree/builder.go` with parallel tree construction
+**Deliverable**: `internal/tree/builder.go` with custom merkle tree implementation
 
 ---
 
@@ -252,35 +292,30 @@ config := &merkletree.Config{
 7. **Test**: Pretty-printed JSON is human-readable
 8. **Implement**: JSON indent formatting
 
-**JSON Structure**:
+**JSON Structure** (actual implementation):
 ```json
 {
-  "version": "1.0",
-  "generated_at": "2025-01-16T10:30:00Z",
-  "root_hash": "abc123...",
-  "config": {
-    "hash_algorithm": "xxhash",
-    "exclusions": ["*.tmp", ".git/"]
-  },
-  "files": [
-    {
-      "path": "relative/path/to/file.txt",
-      "hash": "def456...",
-      "size": 1024,
-      "modified": "2025-01-15T14:20:00Z"
-    }
-  ],
+  "generator": "merkle-go",
+  "created": "2025-11-09T23:35:51.594793+11:00",
+  "root": "/absolute/path/to/scanned/directory",
+  "size": "1.5 MB",
   "tree": {
-    "root": "abc123...",
-    "nodes": [...]
-  },
-  "stats": {
-    "total_files": 150,
-    "total_size": 1048576,
-    "skipped_files": 2
+    "hash": "abc123...",
+    "left": { "hash": "...", "path": "relative/file1.txt", "size": 1024, "mtime": 1705334400 },
+    "right": { "hash": "...", "path": "relative/file2.txt", "size": 2048, "mtime": 1705334500 }
   }
 }
 ```
+
+**Key differences from original plan**:
+- Tree is stored as nested structure with `left` and `right` pointers
+- Leaf nodes include `path`, `size`, and `mtime` fields
+- Root path is stored as absolute path for directory context
+- Size is formatted as human-readable string (KB, MB, GB)
+- Files map is reconstructed from tree during load
+- `generator` field identifies the program that created the tree
+- `created` field uses timezone offset format instead of UTC
+- Default output filename uses root hash: `./output/<root-hash>.json`
 
 **Deliverable**: `internal/tree/serializer.go` with round-trip tests
 
@@ -331,6 +366,43 @@ cobra-cli add compare
 ```
 
 **Deliverable**: `cmd/merkle-go/main.go` with full CLI integration
+
+---
+
+### Phase 8.5: Real-time Progress Bar
+**Implementation** (Completed):
+
+**Features Implemented**:
+- Custom progress bar package in `internal/progress/`
+- Visual progress indicator with block characters (█ for filled, ░ for empty)
+- Real-time percentage and file count display (e.g., "56% (84/150)")
+- Current directory tracking (shows up to 3 directories being processed)
+- Thread-safe concurrent updates with mutex synchronization
+- Update throttling (100ms minimum interval) to prevent flickering
+- Automatic cleanup on completion
+
+**Usage**:
+```go
+bar := progress.New(int64(totalFiles))
+// During file processing:
+bar.SetDirectory(dirPath)  // Called by workers
+bar.Increment()            // Called after each file
+bar.Finish()              // Clears progress and adds newline
+```
+
+**Output Format**:
+```
+[████████████████████████████░░░░░░░░░░░░░░░░░░░░░░]  56% (84/150) | internal, cmd, pkg
+```
+
+**Key Implementation Details**:
+- Thread-safe with separate mutexes for progress count and directory tracking
+- 50-character wide progress bar
+- Shows "+N more" when more than 3 directories are being processed
+- Integrates seamlessly with worker pool architecture
+- Uses ANSI escape codes for in-place updates (\r\033[K)
+
+**Deliverable**: `internal/progress/progress.go` with concurrent-safe implementation
 
 ---
 
@@ -411,7 +483,7 @@ go tool pprof mem.prof
 | **CLI Framework** | Cobra | Industry standard, used by kubectl, hugo, gh. Rich features. |
 | **Logging** | slog (stdlib) | Good performance, no external deps, future-proof |
 | **Hashing** | cespare/xxhash/v2 | Fast (17GB/s), well-maintained, non-crypto |
-| **Merkle Tree** | txaty/go-merkletree | High performance, parallel support, custom hash |
+| **Merkle Tree** | Custom implementation | Classic algorithm, full control, no external deps |
 | **File Walking** | filepath.WalkDir | Efficient (uses DirEntry), standard library |
 | **Concurrency** | Worker pool | Controlled resource usage, predictable performance |
 | **Worker Count** | 2×CPU cores | I/O-bound workload benefits from more workers |
@@ -419,7 +491,7 @@ go tool pprof mem.prof
 | **Structure** | cmd/internal | Clean separation, testable, scalable |
 | **Output Format** | JSON (human-readable) | Easy to debug, inspect, version |
 | **Error Handling** | Skip with summary | Resilient, user gets full report at end |
-| **Exclusions** | config.yml | Reusable across runs, version-controllable |
+| **Exclusions** | config.toml | Reusable across runs, version-controllable |
 
 ## Architecture Diagram
 
@@ -438,7 +510,7 @@ go tool pprof mem.prof
                         │                 │
                         ▼                 ▼
 ┌─────────────────────────────────────────────────────────────┐
-│                  Config Parser (config.yml)                  │
+│                  Config Parser (config.toml)                 │
 └───────────────────────┬─────────────────────────────────────┘
                         │
                         ▼
@@ -470,8 +542,8 @@ go tool pprof mem.prof
                         │
                         ▼
 ┌─────────────────────────────────────────────────────────────┐
-│          Merkle Tree Builder (go-merkletree)                 │
-│          with Parallel Processing Enabled                    │
+│          Merkle Tree Builder (Custom)                        │
+│          Classic pairing algorithm                           │
 └───────────────────────┬─────────────────────────────────────┘
                         │
         ┌───────────────┴───────────────┐
@@ -502,6 +574,7 @@ go tool pprof mem.prof
 - ✅ Accurate change detection (zero false positives/negatives)
 - ✅ Graceful handling of permission errors (skip and report)
 - ✅ Clear, actionable output for users
+- ✅ Real-time progress feedback with visual progress bar
 - ✅ Performance: Hash 1000 files in < 1 second
 - ✅ Memory efficient: < 100MB for 10,000 files
 - ✅ Zero panics or crashes in error scenarios
@@ -517,7 +590,6 @@ go mod init merkle-go
 # Install dependencies
 go get github.com/spf13/cobra@latest
 go get github.com/cespare/xxhash/v2@latest
-go get github.com/txaty/go-merkletree@latest
 go get gopkg.in/yaml.v3@latest
 
 # Initialize Cobra CLI
@@ -592,17 +664,17 @@ GOOS=windows GOARCH=amd64 go build -o bin/merkle-go.exe ./cmd/merkle-go
 
 ### Generate merkle tree
 ```bash
-# Basic usage
-./merkle-go generate /path/to/directory -o tree.json
+# Basic usage (default output: ./output/<root-hash>.json)
+./merkle-go /path/to/directory
 
-# With custom config and verbose logging
-./merkle-go generate /path/to/directory -o tree.json -c custom-config.yml -v
+# With custom output file
+./merkle-go /path/to/directory custom-tree.json
+
+# With custom config
+./merkle-go /path/to/directory -c custom-config.toml
 
 # With more workers
-./merkle-go generate /path/to/directory -o tree.json -w 16
-
-# With JSON logging (for production)
-./merkle-go generate /path/to/directory -o tree.json --json-log
+./merkle-go /path/to/directory -w 16
 ```
 
 ### Compare trees
@@ -614,35 +686,40 @@ GOOS=windows GOARCH=amd64 go build -o bin/merkle-go.exe ./cmd/merkle-go
 ./merkle-go compare tree.json /path/to/directory
 echo $?  # 0=no changes, 1=changes, 2=errors
 
-# With verbose logging
-./merkle-go compare tree.json /path/to/directory -v
+# With custom config
+./merkle-go compare tree.json /path/to/directory -c custom-config.toml
 ```
 
-### Example config.yml
-```yaml
-exclude:
+### Example config.toml
+```toml
+# List of files or directories to skip
+skip = [
   # Version control
-  - ".git/"
-  - ".svn/"
+  ".git/",
+  ".svn/",
 
   # Dependencies
-  - "node_modules/"
-  - "vendor/"
-  - "__pycache__/"
+  "node_modules/",
+  "vendor/",
+  "__pycache__/",
 
   # Build artifacts
-  - "*.o"
-  - "*.so"
-  - "*.exe"
-  - "bin/"
-  - "dist/"
+  "*.o",
+  "*.so",
+  "*.exe",
+  "bin/",
+  "dist/",
 
   # Temporary files
-  - "*.tmp"
-  - "*.swp"
-  - "*.log"
-  - ".DS_Store"
-  - "Thumbs.db"
+  "*.tmp",
+  "*.swp",
+  "*.log",
+  ".DS_Store",
+  "Thumbs.db",
+]
+
+# Output file (optional - defaults to ./output/<root-hash>.json)
+output_file = ""
 ```
 
 ## Future Enhancements (Post-MVP)

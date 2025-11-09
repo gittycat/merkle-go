@@ -4,16 +4,17 @@ import (
 	"fmt"
 	"os"
 
-	"gopkg.in/yaml.v3"
+	"github.com/pelletier/go-toml/v2"
 )
 
 type Config struct {
-	Exclude []string `yaml:"exclude"`
+	Skip       []string `toml:"skip"`
+	OutputFile string   `toml:"output_file"`
 }
 
 func DefaultConfig() *Config {
 	return &Config{
-		Exclude: []string{
+		Skip: []string{
 			".git/",
 			".svn/",
 			"node_modules/",
@@ -30,6 +31,7 @@ func DefaultConfig() *Config {
 			".DS_Store",
 			"Thumbs.db",
 		},
+		OutputFile: "",
 	}
 }
 
@@ -43,14 +45,16 @@ func LoadConfig(path string) (*Config, error) {
 	}
 
 	var cfg Config
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
-		return nil, fmt.Errorf("failed to parse config YAML: %w", err)
+	if err := toml.Unmarshal(data, &cfg); err != nil {
+		return nil, fmt.Errorf("failed to parse config TOML: %w", err)
 	}
 
-	// Initialize Exclude slice if nil (for empty configs)
-	if cfg.Exclude == nil {
-		cfg.Exclude = []string{}
+	// Initialize Skip slice if nil (for empty configs)
+	if cfg.Skip == nil {
+		cfg.Skip = []string{}
 	}
+
+	// OutputFile can be empty - will default to ./output/<root-hash>.json in main
 
 	return &cfg, nil
 }

@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"runtime"
 
 	"merkle-go/internal/compare"
@@ -21,15 +22,10 @@ var (
 )
 
 var rootCmd = &cobra.Command{
-	Use:   "merkle-go",
-	Short: "Generate and compare merkle trees of file hashes",
-	Long:  `A CLI tool that generates merkle trees from directory trees and compares them to detect changes.`,
-}
-
-var generateCmd = &cobra.Command{
-	Use:   "generate <directory>",
+	Use:   "merkle-go <directory> [output-json-filename]",
 	Short: "Generate merkle tree from directory",
-	Args:  cobra.ExactArgs(1),
+	Long:  `Generate a merkle tree from a directory tree and save it to a JSON file.`,
+	Args:  cobra.RangeArgs(1, 2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		directory := args[0]
 
@@ -39,10 +35,22 @@ var generateCmd = &cobra.Command{
 			return fmt.Errorf("failed to load config: %w", err)
 		}
 
-		fmt.Printf("Scanning directory: %s\n", directory)
+		// Set output path - from args, config, or default
+		outputPath := cfg.OutputFile
+		if len(args) == 2 {
+			outputPath = args[1]
+		}
+
+		// Convert to absolute path
+		absDirectory, err := filepath.Abs(directory)
+		if err != nil {
+			return fmt.Errorf("failed to get absolute path: %w", err)
+		}
+
+		fmt.Printf("Scanning directory: %s\n", absDirectory)
 
 		// Walk directory
-		walkResult, err := walker.Walk(directory, cfg.Exclude)
+		walkResult, err := walker.Walk(absDirectory, cfg.Skip)
 		if err != nil {
 			return fmt.Errorf("failed to walk directory: %w", err)
 		}
@@ -74,9 +82,20 @@ var generateCmd = &cobra.Command{
 		}
 
 		// Build merkle tree
-		merkleTree, err := tree.Build(fileDataMap)
+		merkleTree, err := tree.Build(fileDataMap, absDirectory)
 		if err != nil {
 			return fmt.Errorf("failed to build merkle tree: %w", err)
+		}
+
+		// If no output path specified, use root hash as filename in ./output/
+		if outputPath == "" {
+			outputPath = filepath.Join("output", merkleTree.Root.Hash+".json")
+		}
+
+		// Ensure output directory exists
+		outputDir := filepath.Dir(outputPath)
+		if err := os.MkdirAll(outputDir, 0755); err != nil {
+			return fmt.Errorf("failed to create output directory: %w", err)
 		}
 
 		// Save to file
@@ -85,7 +104,7 @@ var generateCmd = &cobra.Command{
 		}
 
 		fmt.Printf("✓ Merkle tree generated successfully\n")
-		fmt.Printf("  Root hash: %s\n", merkleTree.RootHash)
+		fmt.Printf("  Root hash: %s\n", merkleTree.Root.Hash)
 		fmt.Printf("  Files: %d\n", len(merkleTree.Files))
 		fmt.Printf("  Output: %s\n", outputPath)
 
@@ -105,13 +124,19 @@ var compareCmd = &cobra.Command{
 		treePath := args[0]
 		directory := args[1]
 
+		// Convert to absolute path
+		absDirectory, err := filepath.Abs(directory)
+		if err != nil {
+			return fmt.Errorf("failed to get absolute path: %w", err)
+		}
+
 		// Load saved tree
 		oldTree, err := tree.Load(treePath)
 		if err != nil {
 			return fmt.Errorf("failed to load tree: %w", err)
 		}
 
-		fmt.Printf("Loaded saved tree (root: %s)\n", oldTree.RootHash[:16]+"...")
+		fmt.Printf("Loaded saved tree (root: %s)\n", oldTree.Root.Hash[:16]+"...")
 
 		// Load config
 		cfg, err := config.LoadConfig(configPath)
@@ -119,10 +144,10 @@ var compareCmd = &cobra.Command{
 			return fmt.Errorf("failed to load config: %w", err)
 		}
 
-		fmt.Printf("Scanning directory: %s\n", directory)
+		fmt.Printf("Scanning directory: %s\n", absDirectory)
 
 		// Walk directory
-		walkResult, err := walker.Walk(directory, cfg.Exclude)
+		walkResult, err := walker.Walk(absDirectory, cfg.Skip)
 		if err != nil {
 			return fmt.Errorf("failed to walk directory: %w", err)
 		}
@@ -154,7 +179,7 @@ var compareCmd = &cobra.Command{
 		}
 
 		// Build new tree
-		newTree, err := tree.Build(fileDataMap)
+		newTree, err := tree.Build(fileDataMap, absDirectory)
 		if err != nil {
 			return fmt.Errorf("failed to build merkle tree: %w", err)
 		}
@@ -185,17 +210,14 @@ var compareCmd = &cobra.Command{
 func init() {
 	defaultWorkers := runtime.NumCPU() * 2
 
-	// Generate command flags
-	generateCmd.Flags().StringVarP(&outputPath, "output", "o", "", "Output file path (required)")
-	generateCmd.Flags().StringVarP(&configPath, "config", "c", "config.yml", "Config file path")
-	generateCmd.Flags().IntVarP(&workers, "workers", "w", defaultWorkers, "Number of worker goroutines")
-	generateCmd.MarkFlagRequired("output")
+	// Root command flags
+	rootCmd.Flags().StringVarP(&configPath, "config", "c", "config.toml", "Config file path")
+	rootCmd.Flags().IntVarP(&workers, "workers", "w", defaultWorkers, "Number of worker goroutines")
 
 	// Compare command flags
-	compareCmd.Flags().StringVarP(&configPath, "config", "c", "config.yml", "Config file path")
+	compareCmd.Flags().StringVarP(&configPath, "config", "c", "config.toml", "Config file path")
 	compareCmd.Flags().IntVarP(&workers, "workers", "w", defaultWorkers, "Number of worker goroutines")
 
-	rootCmd.AddCommand(generateCmd)
 	rootCmd.AddCommand(compareCmd)
 }
 

@@ -1,0 +1,16 @@
+# Configuration Settings
+
+# List of files or directories to skip when creating the merkle tree
+skip = [
+  ".DS_Store",
+  ".git",
+  "node_modules",
+  "vendor/",
+  "__pycache__/",
+  ".vscode",
+  ".idea",
+  ".venv",
+]
+
+# Output file path (optional - defaults to ./output/<root-hash>.json)
+output_file = ""

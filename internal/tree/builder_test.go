@@ -7,12 +7,12 @@ import (
 func TestBuild_EmptyFiles(t *testing.T) {
 	files := make(map[string]FileData)
 
-	tree, err := Build(files)
+	tree, err := Build(files, "/test")
 	if err != nil {
 		t.Fatalf("Build failed: %v", err)
 	}
 
-	if tree.RootHash == "" {
+	if tree.Root.Hash == "" {
 		t.Error("Root hash should not be empty even for empty tree")
 	}
 }
@@ -25,12 +25,12 @@ func TestBuild_SingleFile(t *testing.T) {
 		},
 	}
 
-	tree, err := Build(files)
+	tree, err := Build(files, "/test")
 	if err != nil {
 		t.Fatalf("Build failed: %v", err)
 	}
 
-	if tree.RootHash == "" {
+	if tree.Root.Hash == "" {
 		t.Error("Root hash should not be empty")
 	}
 
@@ -46,12 +46,12 @@ func TestBuild_MultipleFiles(t *testing.T) {
 		"/test/file3.txt": {Hash: "hash3", Size: 300},
 	}
 
-	tree, err := Build(files)
+	tree, err := Build(files, "/test")
 	if err != nil {
 		t.Fatalf("Build failed: %v", err)
 	}
 
-	if tree.RootHash == "" {
+	if tree.Root.Hash == "" {
 		t.Error("Root hash should not be empty")
 	}
 
@@ -66,17 +66,17 @@ func TestBuild_Deterministic(t *testing.T) {
 		"/test/file2.txt": {Hash: "hash2", Size: 200},
 	}
 
-	tree1, err := Build(files)
+	tree1, err := Build(files, "/test")
 	if err != nil {
 		t.Fatalf("Build failed: %v", err)
 	}
 
-	tree2, err := Build(files)
+	tree2, err := Build(files, "/test")
 	if err != nil {
 		t.Fatalf("Build failed: %v", err)
 	}
 
-	if tree1.RootHash != tree2.RootHash {
+	if tree1.Root.Hash != tree2.Root.Hash {
 		t.Error("Same input should produce same root hash")
 	}
 }
@@ -90,17 +90,17 @@ func TestBuild_DifferentInputsDifferentHash(t *testing.T) {
 		"/test/file2.txt": {Hash: "hash2", Size: 200},
 	}
 
-	tree1, err := Build(files1)
+	tree1, err := Build(files1, "/test")
 	if err != nil {
 		t.Fatalf("Build failed: %v", err)
 	}
 
-	tree2, err := Build(files2)
+	tree2, err := Build(files2, "/test")
 	if err != nil {
 		t.Fatalf("Build failed: %v", err)
 	}
 
-	if tree1.RootHash == tree2.RootHash {
+	if tree1.Root.Hash == tree2.Root.Hash {
 		t.Error("Different inputs should produce different root hashes")
 	}
 }

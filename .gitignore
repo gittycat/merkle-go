@@ -39,8 +39,10 @@ cpu.prof
 mem.prof
 
 # Application output
+output/
 *.json
 !config.yml
 
 # Logs
 *.log
+test_merkle/
