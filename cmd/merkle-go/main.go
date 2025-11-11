@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"time"
 
 	"merkle-go/internal/compare"
 	"merkle-go/internal/config"
@@ -13,6 +14,30 @@ import (
 	"merkle-go/internal/tree"
 	"merkle-go/internal/walker"
 )
+
+func writeErrorLog(errors []error) (string, error) {
+	if len(errors) == 0 {
+		return "", nil
+	}
+
+	logPath := "log.txt"
+	f, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	if err != nil {
+		return "", fmt.Errorf("failed to open log file: %w", err)
+	}
+	defer f.Close()
+
+	// Write timestamp header
+	timestamp := time.Now().Format("2006-01-02 15:04:05")
+	fmt.Fprintf(f, "\n=== Errors at %s ===\n", timestamp)
+
+	// Write each error
+	for _, err := range errors {
+		fmt.Fprintf(f, "%s\n", err.Error())
+	}
+
+	return logPath, nil
+}
 
 func generateTree(args []string) error {
 	fs := flag.NewFlagSet("merkle-go", flag.ExitOnError)
@@ -131,6 +156,9 @@ func generateTree(args []string) error {
 
 	if len(hashResult.Errors) > 0 {
 		fmt.Printf("\n⚠ Skipped %d files due to errors\n", len(hashResult.Errors))
+		if logPath, err := writeErrorLog(hashResult.Errors); err == nil && logPath != "" {
+			fmt.Printf("  Error details written to: %s\n", logPath)
+		}
 	}
 
 	return nil
@@ -238,6 +266,9 @@ func compareTree(args []string) error {
 
 	if len(hashResult.Errors) > 0 {
 		fmt.Printf("Skipped: %d files\n", len(hashResult.Errors))
+		if logPath, err := writeErrorLog(hashResult.Errors); err == nil && logPath != "" {
+			fmt.Printf("Error details written to: %s\n", logPath)
+		}
 	}
 
 	// Exit with appropriate code
