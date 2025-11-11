@@ -4,33 +4,29 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"time"
 )
 
 type Bar struct {
-	total       int64
-	current     int64
-	width       int
-	writer      io.Writer
-	mu          sync.Mutex
-	currentDirs map[string]bool
-	dirMu       sync.Mutex
-	enabled     bool
-	lastUpdate  time.Time
+	total      int64
+	current    int64
+	width      int
+	writer     io.Writer
+	mu         sync.Mutex
+	enabled    bool
+	lastUpdate time.Time
 }
 
 func New(total int64) *Bar {
 	return &Bar{
-		total:       total,
-		current:     0,
-		width:       50,
-		writer:      os.Stdout,
-		currentDirs: make(map[string]bool),
-		enabled:     true, // Always enabled - terminal detection can be unreliable
-		lastUpdate:  time.Now(),
+		total:      total,
+		current:    0,
+		width:      50,
+		writer:     os.Stdout,
+		enabled:    true, // Always enabled - terminal detection can be unreliable
+		lastUpdate: time.Now(),
 	}
 }
 
@@ -44,20 +40,7 @@ func isTerminal() bool {
 }
 
 func (b *Bar) SetDirectory(dir string) {
-	if !b.enabled {
-		return
-	}
-
-	b.dirMu.Lock()
-	if !b.currentDirs[dir] {
-		b.currentDirs[dir] = true
-	}
-	b.dirMu.Unlock()
-
-	// Render outside of lock to avoid deadlock
-	b.mu.Lock()
-	b.render()
-	b.mu.Unlock()
+	// No-op: directory tracking removed for simpler display
 }
 
 func (b *Bar) Increment() {
@@ -93,26 +76,14 @@ func (b *Bar) render() {
 
 	bar := strings.Repeat("█", filledWidth) + strings.Repeat("░", b.width-filledWidth)
 
-	// Get current directories being processed
-	b.dirMu.Lock()
-	dirs := make([]string, 0, len(b.currentDirs))
-	for dir := range b.currentDirs {
-		dirs = append(dirs, filepath.Base(dir))
-	}
-	b.dirMu.Unlock()
-
-	var dirDisplay string
-	if len(dirs) > 0 {
-		if len(dirs) > 3 {
-			dirDisplay = fmt.Sprintf(" | %s, %s, %s +%d more", dirs[0], dirs[1], dirs[2], len(dirs)-3)
-		} else {
-			dirDisplay = " | " + strings.Join(dirs, ", ")
-		}
-	}
+	// OSC 9;4 - macOS terminal progress bar (Ghostty 1.2+)
+	// Format: \e]9;4;{state};{percentage}\e\\
+	// state: 1 = show progress
+	fmt.Fprintf(b.writer, "\033]9;4;1;%d\033\\", int(percent))
 
 	// Clear the line and write progress
-	fmt.Fprintf(b.writer, "\r\033[K[%s] %3d%% (%d/%d)%s",
-		bar, int(percent), b.current, b.total, dirDisplay)
+	fmt.Fprintf(b.writer, "\r\033[K[%s] %3d%% (%d/%d)",
+		bar, int(percent), b.current, b.total)
 }
 
 func (b *Bar) Finish() {
@@ -125,5 +96,10 @@ func (b *Bar) Finish() {
 
 	b.current = b.total
 	b.render()
+
+	// OSC 9;4 - Hide progress bar
+	// Format: \e]9;4;0;0\e\\ (state 0 = hide)
+	fmt.Fprintf(b.writer, "\033]9;4;0;0\033\\")
+
 	fmt.Fprintf(b.writer, "\n")
 }
