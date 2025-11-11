@@ -149,10 +149,8 @@ func generateTree(args []string) error {
 		return fmt.Errorf("failed to save tree: %w", err)
 	}
 
-	fmt.Printf("✓ Merkle tree generated successfully\n")
-	fmt.Printf("  Root hash: %s\n", merkleTree.Root.Hash)
-	fmt.Printf("  Files: %d\n", len(merkleTree.Files))
-	fmt.Printf("  Output: %s\n", outputPath)
+	fmt.Printf("\nSuccess\n")
+	fmt.Printf("Results in: %s\n", outputPath)
 
 	if len(hashResult.Errors) > 0 {
 		fmt.Printf("\n⚠ Skipped %d files due to errors\n", len(hashResult.Errors))

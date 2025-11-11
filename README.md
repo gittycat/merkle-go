@@ -30,11 +30,10 @@ go run ./cmd/merkle-go <directory> <output.json>
 Scanning directory: /Users/name/project
 Found 150 files
 Hashing files...
-[████████████████████████████░░░░░░░░░░░░░░░░░░░░░░]  56% (84/150) | internal, cmd, pkg
-✓ Merkle tree generated successfully
-  Root hash: a1b2c3d4e5f6a7b8
-  Files: 150
-  Output: output/a1b2c3d4e5f6a7b8.json
+[████████████████████████████░░░░░░░░░░░░░░░░░░░░░░]  56% (84/150)
+
+Success
+Results in: output/a1b2c3d4e5f6a7b8.json
 ```
 
 ### Compare trees
