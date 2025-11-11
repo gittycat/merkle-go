@@ -58,7 +58,6 @@ echo "changed" > test/file1.txt
 ```
 
 ## Dependencies
-- **`github.com/spf13/cobra`** - CLI framework
 - **`github.com/cespare/xxhash/v2`** - Fast xxHash implementation (non-cryptographic)
 - **`github.com/pelletier/go-toml/v2`** - TOML parsing for config files
 - **Standard library**:
@@ -344,26 +343,12 @@ for len(currentLevel) > 1 {
 
 ---
 
-### Phase 8: CLI Integration with Cobra
-**Test-Driven Development**:
-1. **Test**: Parse `generate` command with required flags
-2. **Implement**: Cobra `generate` command structure
-3. **Test**: Parse `compare` command with arguments
-4. **Implement**: Cobra `compare` command structure
-5. **Test**: Verify error on missing required arguments
-6. **Implement**: Argument validation
-7. **Test**: Verify --help output is clear
-8. **Implement**: Command descriptions and examples
-9. **Test**: Integration test: full generate → compare workflow
-10. **Implement**: Wire all components together in commands
-
-**Cobra Setup**:
-```bash
-# Initialize cobra
-cobra-cli init
-cobra-cli add generate
-cobra-cli add compare
-```
+### Phase 8: CLI Integration with flag package
+**Implementation**:
+1. Create `FlagSet` for each subcommand (generate, compare)
+2. Implement dispatcher pattern based on `os.Args[1]`
+3. Add argument validation and usage messages
+4. Wire all components together
 
 **Deliverable**: `cmd/merkle-go/main.go` with full CLI integration
 
@@ -480,7 +465,7 @@ go tool pprof mem.prof
 
 | Component | Decision | Rationale |
 |-----------|----------|-----------|
-| **CLI Framework** | Cobra | Industry standard, used by kubectl, hugo, gh. Rich features. |
+| **CLI Framework** | flag (stdlib) | Zero dependencies, simple subcommands, lightweight |
 | **Logging** | slog (stdlib) | Good performance, no external deps, future-proof |
 | **Hashing** | cespare/xxhash/v2 | Fast (17GB/s), well-maintained, non-crypto |
 | **Merkle Tree** | Custom implementation | Classic algorithm, full control, no external deps |
@@ -502,7 +487,7 @@ go tool pprof mem.prof
                         │
                         ▼
 ┌─────────────────────────────────────────────────────────────┐
-│                 Cobra Commands                               │
+│                 CLI Subcommands (flag)                       │
 │  ┌──────────────────┐         ┌──────────────────┐         │
 │  │  generate        │         │  compare         │         │
 │  └──────────────────┘         └──────────────────┘         │
@@ -588,15 +573,8 @@ go tool pprof mem.prof
 go mod init merkle-go
 
 # Install dependencies
-go get github.com/spf13/cobra@latest
 go get github.com/cespare/xxhash/v2@latest
-go get gopkg.in/yaml.v3@latest
-
-# Initialize Cobra CLI
-go install github.com/spf13/cobra-cli@latest
-cobra-cli init
-cobra-cli add generate
-cobra-cli add compare
+go get github.com/pelletier/go-toml/v2@latest
 ```
 
 ### TDD Cycle

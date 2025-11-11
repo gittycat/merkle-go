@@ -5,6 +5,11 @@ Fast directory integrity verification using Merkle trees with xxHash and concurr
 ## Installation
 
 ```bash
+make build
+```
+
+Or manually:
+```bash
 go build -o bin/merkle-go ./cmd/merkle-go
 ```
 
@@ -14,10 +19,10 @@ go build -o bin/merkle-go ./cmd/merkle-go
 
 ```bash
 # Default output: ./output/<root-hash>.json
-./merkle-go <directory>
+go run ./cmd/merkle-go <directory>
 
 # Custom output file
-./merkle-go <directory> <output.json>
+go run ./cmd/merkle-go <directory> <output.json>
 ```
 
 **Example output:**
@@ -35,7 +40,7 @@ Hashing files...
 ### Compare trees
 
 ```bash
-./merkle-go compare <tree.json> <directory>
+go run ./cmd/merkle-go compare <tree.json> <directory>
 ```
 
 **Example output:**
@@ -89,7 +94,6 @@ Both commands support:
 
 ## Dependencies
 
-- [github.com/spf13/cobra](https://github.com/spf13/cobra) - CLI framework
 - [github.com/cespare/xxhash/v2](https://github.com/cespare/xxhash) - Fast hashing
 - [github.com/pelletier/go-toml/v2](https://github.com/pelletier/go-toml) - TOML parsing
 
